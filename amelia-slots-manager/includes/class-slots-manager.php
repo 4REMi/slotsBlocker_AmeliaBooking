@@ -478,38 +478,44 @@ class Slots_Manager {
             return $resultData;
         }
 
-        $now = $this->get_wp_datetime();
+        // Solo procesar si es una reserva desde el frontend
+        if (!isset($props['isFrontEndBooking']) || !$props['isFrontEndBooking']) {
+            return $resultData;
+        }
+
+        // Verificar serviceId
+        if (!isset($props['serviceId'])) {
+            error_log('Amelia Slots Manager - No serviceId provided');
+            return $resultData;
+        }
+
+        // Usar el timezone proporcionado por Amelia si está disponible
+        $timezone = isset($props['timeZone']) ? new DateTimeZone($props['timeZone']) : $this->timezone;
+        $now = new DateTime('now', $timezone);
         $current_time = $now->format('U');
-        error_log('Hora actual en timezone ' . $this->timezone->getName() . ': ' . $now->format('Y-m-d H:i:s'));
+        $current_date = $now->format('Y-m-d');
         
+        // Configuración de madrugada
         $tomorrow = clone $now;
         $tomorrow->modify('+1 day');
         $tomorrow_date = $tomorrow->format('Y-m-d');
         
-        // Primera condicional
+        // Primera condicional de madrugada
         $minimum_hours = get_option($this->hours_option, $this->default_hours);
         $target_time = get_option($this->time_option, $this->default_time);
         $min_required_time = $minimum_hours * 3600 + 2 * 60;
 
-        // Segunda condicional
+        // Segunda condicional de madrugada
         $conditional_enabled = get_option($this->conditional_enabled, false);
         $minimum_hours_2 = get_option($this->hours_option_2, $this->default_hours);
         $target_time_2 = get_option($this->time_option_2, $this->default_time);
         $min_required_time_2 = $minimum_hours_2 * 3600 + 2 * 60;
 
-        // Obtener minutos mínimos configurados
+        // Minutos mínimos para participantes
         $minimum_minutes = get_option($this->minimum_minutes_option, $this->default_minimum_minutes);
-
-        error_log('Configuración de horarios:');
-        error_log('Target time 1: ' . $target_time);
-        error_log('Target time 2: ' . $target_time_2);
-        error_log('Conditional enabled: ' . ($conditional_enabled ? 'true' : 'false'));
-        error_log('Minimum minutes: ' . $minimum_minutes);
-
+        
         // Cache para bloqueos
         $blocks_cache = array();
-
-        $current_date = $now->format('Y-m-d');
         $found_first_slot = false;
 
         foreach ($resultData['slots'] as $date => &$times) {
@@ -517,118 +523,145 @@ class Slots_Manager {
                 continue;
             }
 
-            // Obtener bloqueos para esta fecha y loguear para debugging
+            // 1. Obtener bloqueos manuales para esta fecha
             if (!isset($blocks_cache[$date])) {
                 $blocks_cache[$date] = $this->get_active_blocks_for_date($date);
-                error_log('Procesando fecha: ' . $date);
-                error_log('Horarios disponibles antes de filtrar: ' . print_r(array_keys($times), true));
-                error_log('Bloqueos activos: ' . print_r($blocks_cache[$date], true));
             }
 
-            // Solo procesar slots del día actual para la regla de minutos mínimos
+            // 2. Filtrar horarios en punto y bloqueos manuales
+            foreach (array_keys($times) as $time) {
+                // Remover horarios en punto (HH:00)
+                if (preg_match('/^\d{1,2}:00$/', $time)) {
+                    unset($times[$time]);
+                    continue;
+                }
+
+                // Aplicar bloqueos manuales
+                if (in_array($time, $blocks_cache[$date])) {
+                    unset($times[$time]);
+                    continue;
+                }
+            }
+
+            // 3. Regla de participantes para el slot más inmediato
             if ($date === $current_date && !$found_first_slot) {
-                ksort($times); // Asegurar que los slots estén ordenados por hora
+                $serviceId = (int)$props['serviceId'];
+                $nearest = $this->get_nearest_appointment($serviceId, $timezone);
+                
+                ksort($times);
                 foreach ($times as $time => $slot) {
                     if (!$found_first_slot) {
-                        // Convertir el tiempo del slot a timestamp para comparación
-                        $slot_time = new DateTime($date . ' ' . $time, $this->timezone);
+                        $slot_time = new DateTime($date . ' ' . $time, $timezone);
                         $slot_timestamp = $slot_time->format('U');
-                        
-                        // Calcular diferencia en minutos
                         $diff_minutes = ($slot_timestamp - $current_time) / 60;
-                        
+
                         if ($diff_minutes < $minimum_minutes) {
-                            // Si hay menos del tiempo mínimo configurado hasta el slot, eliminarlo
-                            unset($times[$time]);
-                            error_log('Slot eliminado por regla de minutos mínimos (' . $minimum_minutes . ' min): ' . $date . ' ' . $time);
+                            if (!$nearest || $nearest['current_participants'] == 0) {
+                                unset($times[$time]);
+                            }
                         }
-                        $found_first_slot = true; // Marcar que ya procesamos el primer slot
+                        $found_first_slot = true;
                     }
                 }
             }
 
-            // PRIMERA FASE: Aplicar bloqueos para todas las fechas
-            foreach (array_keys($times) as $time) {
-                error_log('Procesando horario: ' . $time . ' para fecha: ' . $date);
-                
-                // Primero verificar si es un horario en punto (HH:00)
-                if (preg_match('/^\d{1,2}:00$/', $time)) {
-                    unset($times[$time]);
-                    error_log('Removiendo horario en punto - ' . $time);
-                    continue;
-                }
-
-                // Log the comparison details
-                error_log('Comparando horario ' . $time . ' con bloqueos: ' . print_r($blocks_cache[$date], true));
-                
-                // Comparar directamente con el tiempo original (HH:10)
-                if (in_array($time, $blocks_cache[$date])) {
-                    unset($times[$time]);
-                    error_log('Removiendo horario bloqueado - ' . $time . ' encontrado en la lista de bloqueos');
-                    continue;
-                } else {
-                    error_log('Horario ' . $time . ' no está bloqueado, se mantiene disponible');
-                }
-            }
-
-            // SEGUNDA FASE: Aplicar reglas de madrugada solo para el día siguiente
+            // 4. Reglas de madrugada para el día siguiente
             if ($date === $tomorrow_date) {
                 foreach (array_keys($times) as $time) {
                     $normalized_time = substr($time, 0, 5);
 
-                    error_log('Comparando madrugada:');
-                    error_log('Hora normalizada: ' . $normalized_time);
-                    error_log('Target time 1: ' . $target_time);
-                    error_log('Target time 2: ' . $target_time_2);
-
-                    // Procesar slots del día siguiente
+                    // Primera regla de madrugada
                     if ($normalized_time === $target_time || $normalized_time === str_pad($target_time, 5, '0', STR_PAD_LEFT)) {
-                        // Crear DateTime para el slot en la zona horaria correcta
-                        $slot_datetime = new DateTime("$date $time:00", $this->timezone);
+                        $slot_datetime = new DateTime("$date $time", $timezone);
                         $time_difference = $slot_datetime->format('U') - $current_time;
                         
-                        error_log(sprintf(
-                            'Comparando horario %s - Diferencia: %d segundos (requerido: %d)',
-                            $time,
-                            $time_difference,
-                            $min_required_time
-                        ));
-
                         if ($time_difference < $min_required_time) {
                             unset($times[$time]);
-                            error_log('Removiendo horario por tiempo mínimo 1 - ' . $time);
                             continue;
                         }
                     }
 
+                    // Segunda regla de madrugada (si está habilitada)
                     if ($conditional_enabled && 
                         ($normalized_time === $target_time_2 || $normalized_time === str_pad($target_time_2, 5, '0', STR_PAD_LEFT))) {
-                        // Crear DateTime para el slot en la zona horaria correcta
-                        $slot_datetime = new DateTime("$date $time:00", $this->timezone);
+                        $slot_datetime = new DateTime("$date $time", $timezone);
                         $time_difference = $slot_datetime->format('U') - $current_time;
-
-                        error_log(sprintf(
-                            'Comparando horario condicional %s - Diferencia: %d segundos (requerido: %d)',
-                            $time,
-                            $time_difference,
-                            $min_required_time_2
-                        ));
 
                         if ($time_difference < $min_required_time_2) {
                             unset($times[$time]);
-                            error_log('Removiendo horario por tiempo mínimo 2 - ' . $time);
                         }
                     }
                 }
             }
 
-            // Remove date if no times left
+            // Remover fecha si no quedan slots
             if (empty($times)) {
                 unset($resultData['slots'][$date]);
-                error_log('Removiendo fecha por no tener horarios - ' . $date);
             }
         }
 
         return $resultData;
+    }
+
+    private function get_nearest_appointment($serviceId, $timezone) {
+        global $wpdb;
+
+        // Convertir la hora actual a UTC para la consulta
+        $now_local = new DateTime('now', $timezone);
+        $now_utc = clone $now_local;
+        $now_utc->setTimezone(new DateTimeZone('UTC'));
+        $today_utc = $now_utc->format('Y-m-d');
+
+        $query = $wpdb->prepare(
+            "SELECT 
+                a.id as appointment_id,
+                a.bookingStart,
+                a.serviceId,
+                a.providerId,
+                s.maxCapacity,
+                COUNT(
+                    CASE 
+                        WHEN cb.status IN ('approved', 'pending') 
+                        AND cb.customerId != %d
+                        THEN cb.id 
+                        ELSE NULL 
+                    END
+                ) as current_participants
+            FROM 
+                {$wpdb->prefix}amelia_appointments a
+                JOIN {$wpdb->prefix}amelia_services s ON a.serviceId = s.id
+                LEFT JOIN {$wpdb->prefix}amelia_customer_bookings cb ON a.id = cb.appointmentId
+            WHERE 
+                a.status = %s
+                AND a.serviceId = %d
+                AND DATE(a.bookingStart) = %s
+                AND a.bookingStart > UTC_TIMESTAMP()
+            GROUP BY 
+                a.id, a.bookingStart, a.serviceId, a.providerId
+            ORDER BY 
+                a.bookingStart ASC
+            LIMIT 1",
+            84,  // Tu customerId
+            'approved',
+            $serviceId,
+            $today_utc
+        );
+
+        $result = $wpdb->get_row($query, ARRAY_A);
+        
+        if ($wpdb->last_error) {
+            error_log('Amelia Slots Manager - DB Error: ' . $wpdb->last_error);
+            return false;
+        }
+
+        if ($result) {
+            // Convertir bookingStart de UTC a timezone local
+            $booking_time_utc = new DateTime($result['bookingStart'], new DateTimeZone('UTC'));
+            $booking_time_local = clone $booking_time_utc;
+            $booking_time_local->setTimezone($timezone);
+            $result['bookingStart_local'] = $booking_time_local->format('Y-m-d H:i:s');
+        }
+
+        return $result;
     }
 } 
