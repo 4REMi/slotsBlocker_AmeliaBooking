@@ -1,44 +1,70 @@
-# Amelia Slots Manager
+# Amelia Slots Blocker
 
-## Descripción
-Amelia Slots Manager es un plugin de WordPress diseñado para mejorar la funcionalidad del plugin Amelia Booking. Permite un control manual sobre slots de tiempo específicos en el sistema de reservas de Amelia, permitiendo a los administradores agregar bloques específicos a timeslots.
+A WordPress plugin designed to enhance Amelia Booking's slot management capabilities with advanced scheduling controls and participant-based filtering.
 
-## Características
-- Gestión manual de slots de tiempo
-- Integración con Amelia Booking Plugin
-- Adición de bloques personalizados a timeslots específicos
-- Configuración de tiempo mínimo antes de la próxima cita disponible
-- Sistema de bloqueos para horarios específicos
-- Interfaz de administración intuitiva
+## Features
 
-## Requisitos
-- WordPress 5.0 o superior
-- PHP 7.0 o superior
-- Plugin Amelia Booking activo
+### Early Morning Slots Management
+- Configure minimum advance booking times for early morning appointments
+- Set specific time slots (e.g., 6:10 AM) with customizable booking rules
+- Optional secondary time slot with independent rules
+- Automatic 2-minute buffer added to configured times
 
-## Instalación
-1. Sube los archivos del plugin a la carpeta `/wp-content/plugins/amelia-slots-manager`
-2. Activa el plugin a través del menú 'Plugins' en WordPress
-3. Asegúrate de que el plugin Amelia Booking esté instalado y activado
+### Participant-Based Slot Filtering
+- Set minimum time margins for immediate bookings
+- Configure a placeholder customer ID for participant counting
+- Smart filtering based on existing participants
+- Exclude placeholder customer from participant counts
 
-## Uso
-El plugin proporciona una interfaz para:
-- Ver slots de tiempo disponibles
-- Agregar bloques a slots específicos
-- Gestionar la disponibilidad de reservas
-- Configurar ajustes de slots de tiempo
+### Manual Slot Blocking
+- Block specific time slots on selected dates
+- Calendar-based interface for easy date selection
+- Add optional reasons for blocks
+- View and manage all active blocks
 
-## Configuración
-1. Accede a la configuración del plugin en el panel de administración
-2. Establece el tiempo mínimo requerido antes de la próxima cita
-3. Configura los horarios de madrugada y sus reglas asociadas
-4. Gestiona los bloqueos de slots según sea necesario
+## Requirements
+- WordPress 5.0 or higher
+- Amelia Booking Plugin
+- PHP 7.2 or higher
 
-## Autor
-Remi Olivo
+## Installation
 
-## Licencia
-Este proyecto está licenciado bajo la Licencia GPL v2 o posterior.
+1. Upload the plugin files to `/wp-content/plugins/amelia-slots-blocker`
+2. Activate the plugin through the 'Plugins' screen in WordPress
+3. Configure the plugin settings under 'Hrs Madrugada' in the admin menu
 
-## Soporte
-Para soporte o reporte de errores, por favor contacta al autor o crea un issue en el repositorio de GitHub. 
+## Configuration
+
+### Early Morning Settings
+1. Navigate to 'Hrs Madrugada' in the admin menu
+2. Set minimum advance hours for early morning slots
+3. Select target time slot
+4. Optionally enable and configure secondary time slot
+
+### Participant Settings
+1. Go to 'Cliente Iniciador' submenu
+2. Search and select the placeholder customer
+3. Configure minimum minutes for immediate slots
+
+### Manual Blocks
+1. Access 'Bloqueos' submenu
+2. Select date and time slot
+3. Add optional reason for blocking
+4. Save to apply the block
+
+## Support
+For support or feature requests, please use the [GitHub issues page](https://github.com/4REMi/slotsBlocker_AmeliaBooking/issues).
+
+## Version History
+
+### 1.0.1
+- Separated settings groups to prevent conflicts
+- Fixed calendar display in blocks page
+- Improved placeholder customer management
+- Updated plugin information and branding
+
+## Author
+Rocash
+
+## License
+This project is licensed under the GPL v2 or later 
