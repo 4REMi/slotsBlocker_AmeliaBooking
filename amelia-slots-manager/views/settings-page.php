@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
     
     <div class="asm-container">
         <form method="post" action="options.php">
-            <?php settings_fields('asm_settings'); ?>
+            <?php settings_fields('asm_morning_settings'); ?>
             
             <table class="form-table">
                 <tr>

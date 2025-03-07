@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: Slots Manager
+ * Plugin Name: Amelia Slots Blocker
  * Description: Gestiona los tiempos mínimos para reservas en horarios específicos.
- * Version: 1.0.0
- * Author: Your Name
+ * Version: 1.0.1
+ * Author: Rocash
  * Text Domain: slots-manager
  */
 

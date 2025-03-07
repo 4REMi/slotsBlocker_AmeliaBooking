@@ -7,9 +7,11 @@ class Slots_Manager {
     private $time_option_2 = 'asm_target_time_2';
     private $conditional_enabled = 'asm_conditional_enabled';
     private $minimum_minutes_option = 'asm_minimum_minutes';
+    private $placeholder_customer_option = 'asm_placeholder_customer_id';
     private $default_hours = 8;
     private $default_time = '06:10';
     private $default_minimum_minutes = 30;
+    private $default_placeholder_customer = 84; // Tu ID por defecto
     private $table_name;
     private $timezone;
 
@@ -39,6 +41,7 @@ class Slots_Manager {
         add_action('wp_ajax_toggle_conditional', array($this, 'toggle_conditional'));
         add_action('wp_ajax_add_blocked_slot', array($this, 'add_blocked_slot'));
         add_action('wp_ajax_remove_blocked_slot', array($this, 'remove_blocked_slot'));
+        add_action('wp_ajax_search_amelia_customers', array($this, 'search_amelia_customers'));
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
 
         // Cleanup task
@@ -102,84 +105,62 @@ class Slots_Manager {
             'slots-manager-blocks',
             array($this, 'render_blocks_page')
         );
+
+        add_submenu_page(
+            'slots-manager',
+            'Cliente Iniciador',
+            'Cliente Iniciador',
+            'manage_options',
+            'slots-manager-placeholder',
+            array($this, 'render_placeholder_page')
+        );
     }
 
     public function enqueue_admin_scripts($hook) {
-        if (!in_array($hook, array('toplevel_page_slots-manager', 'hrs-madrugada_page_slots-manager-blocks'))) {
+        if (strpos($hook, 'slots-manager') === false) {
             return;
         }
 
-        // jQuery UI Core y sus dependencias
-        wp_enqueue_script('jquery');
-        wp_enqueue_script('jquery-ui-core');
+        // Enqueue jQuery UI y sus estilos
         wp_enqueue_script('jquery-ui-datepicker');
+        wp_enqueue_style(
+            'jquery-ui-style',
+            '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css',
+            array(),
+            '1.12.1'
+        );
 
-        // Script principal del plugin
+        wp_enqueue_style(
+            'asm-admin-style',
+            ASM_PLUGIN_URL . 'assets/css/admin.css',
+            array(),
+            '1.0.0'
+        );
+
         wp_enqueue_script(
-            'slots-manager-admin',
+            'asm-admin-script',
             ASM_PLUGIN_URL . 'assets/js/admin.js',
-            array('jquery', 'jquery-ui-core', 'jquery-ui-datepicker'),
+            array('jquery', 'jquery-ui-datepicker'),
             '1.0.0',
             true
         );
 
-        // Solo para la página de bloqueos
-        if ($hook === 'hrs-madrugada_page_slots-manager-blocks') {
-            // Estilos del datepicker
-            wp_enqueue_style(
-                'jquery-ui-style',
-                'https://code.jquery.com/ui/1.13.2/themes/smoothness/jquery-ui.css',
-                array(),
-                '1.13.2'
-            );
-
-            // Estilos personalizados para el datepicker
-            wp_add_inline_style('jquery-ui-style', '
-                .ui-datepicker {
-                    background-color: #fff;
-                    border: 1px solid #ccc;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    padding: 10px;
-                }
-                .ui-datepicker-header {
-                    background: #f7f7f7;
-                    border: none;
-                    padding: 5px;
-                }
-                .ui-datepicker-calendar th {
-                    background: #f7f7f7;
-                    padding: 5px;
-                }
-                .ui-datepicker-calendar td {
-                    padding: 2px;
-                }
-                .ui-datepicker-calendar td a {
-                    text-align: center;
-                }
-                .ui-datepicker-calendar .ui-state-default {
-                    background: #fff;
-                    border: 1px solid #ddd;
-                }
-                .ui-datepicker-calendar .ui-state-hover {
-                    background: #f0f0f0;
-                }
-                .ui-datepicker-calendar .ui-state-active {
-                    background: #0073aa;
-                    color: #fff;
-                }
-            ');
-        }
-
-        wp_localize_script('slots-manager-admin', 'slotsManagerAdmin', array(
+        wp_localize_script('asm-admin-script', 'slotsManagerAdmin', array(
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('slots-manager-nonce')
         ));
     }
 
     public function register_settings() {
+        // Grupo de opciones para horarios de madrugada
+        $morning_group = 'asm_morning_settings';
+        
+        // Grupo de opciones para cliente iniciador
+        $placeholder_group = 'asm_placeholder_settings';
+
         // Registro de horas mínimas principal
         register_setting(
-            'asm_settings',
+            $morning_group,
             $this->hours_option,
             array(
                 'type' => 'integer',
@@ -190,7 +171,7 @@ class Slots_Manager {
 
         // Registro de horario objetivo principal
         register_setting(
-            'asm_settings',
+            $morning_group,
             $this->time_option,
             array(
                 'type' => 'string',
@@ -201,7 +182,7 @@ class Slots_Manager {
 
         // Registro de estado del condicional
         register_setting(
-            'asm_settings',
+            $morning_group,
             $this->conditional_enabled,
             array(
                 'type' => 'boolean',
@@ -211,7 +192,7 @@ class Slots_Manager {
 
         // Registro de horas mínimas secundario
         register_setting(
-            'asm_settings',
+            $morning_group,
             $this->hours_option_2,
             array(
                 'type' => 'integer',
@@ -222,7 +203,7 @@ class Slots_Manager {
 
         // Registro de horario objetivo secundario
         register_setting(
-            'asm_settings',
+            $morning_group,
             $this->time_option_2,
             array(
                 'type' => 'string',
@@ -233,7 +214,7 @@ class Slots_Manager {
 
         // Registro de minutos mínimos
         register_setting(
-            'asm_settings',
+            $morning_group,
             $this->minimum_minutes_option,
             array(
                 'type' => 'integer',
@@ -241,6 +222,20 @@ class Slots_Manager {
                 'sanitize_callback' => array($this, 'sanitize_minutes')
             )
         );
+
+        // Registro de ID de cliente placeholder en un grupo separado
+        register_setting(
+            $placeholder_group,
+            $this->placeholder_customer_option,
+            array(
+                'type' => 'integer',
+                'default' => $this->default_placeholder_customer,
+                'sanitize_callback' => array($this, 'sanitize_customer_id')
+            )
+        );
+
+        error_log('Amelia Slots Manager - Settings registered');
+        error_log('Amelia Slots Manager - Current placeholder ID: ' . get_option($this->placeholder_customer_option, $this->default_placeholder_customer));
     }
 
     public function toggle_conditional() {
@@ -269,6 +264,12 @@ class Slots_Manager {
     public function sanitize_minutes($value) {
         $value = intval($value);
         return max(1, min(120, $value)); // Permitir entre 1 y 120 minutos
+    }
+
+    public function sanitize_customer_id($value) {
+        $value = absint($value);
+        error_log('Amelia Slots Manager - Sanitizing customer ID: ' . $value);
+        return $value;
     }
 
     public function get_time_options($exclude_time = null) {
@@ -489,11 +490,17 @@ class Slots_Manager {
             return $resultData;
         }
 
+        error_log('Amelia Slots Manager - Starting filter_amelia_timeslots');
+        error_log('Amelia Slots Manager - Service ID: ' . $props['serviceId']);
+
         // Usar el timezone proporcionado por Amelia si está disponible
         $timezone = isset($props['timeZone']) ? new DateTimeZone($props['timeZone']) : $this->timezone;
         $now = new DateTime('now', $timezone);
         $current_time = $now->format('U');
         $current_date = $now->format('Y-m-d');
+        
+        error_log('Amelia Slots Manager - Current Time: ' . $now->format('Y-m-d H:i:s'));
+        error_log('Amelia Slots Manager - Timezone: ' . $timezone->getName());
         
         // Configuración de madrugada
         $tomorrow = clone $now;
@@ -513,6 +520,12 @@ class Slots_Manager {
 
         // Minutos mínimos para participantes
         $minimum_minutes = get_option($this->minimum_minutes_option, $this->default_minimum_minutes);
+        $placeholder_id = get_option($this->placeholder_customer_option, $this->default_placeholder_customer);
+        
+        error_log('Amelia Slots Manager - Configuration:');
+        error_log('Amelia Slots Manager - Minimum Minutes: ' . $minimum_minutes);
+        error_log('Amelia Slots Manager - Placeholder customer ID: ' . $placeholder_id);
+        error_log('Amelia Slots Manager - Default placeholder ID: ' . $this->default_placeholder_customer);
         
         // Cache para bloqueos
         $blocks_cache = array();
@@ -522,6 +535,8 @@ class Slots_Manager {
             if (!is_array($times)) {
                 continue;
             }
+
+            error_log('Amelia Slots Manager - Processing date: ' . $date);
 
             // 1. Obtener bloqueos manuales para esta fecha
             if (!isset($blocks_cache[$date])) {
@@ -548,6 +563,8 @@ class Slots_Manager {
                 $serviceId = (int)$props['serviceId'];
                 $nearest = $this->get_nearest_appointment($serviceId, $timezone);
                 
+                error_log('Amelia Slots Manager - Nearest appointment: ' . print_r($nearest, true));
+                
                 ksort($times);
                 foreach ($times as $time => $slot) {
                     if (!$found_first_slot) {
@@ -555,9 +572,16 @@ class Slots_Manager {
                         $slot_timestamp = $slot_time->format('U');
                         $diff_minutes = ($slot_timestamp - $current_time) / 60;
 
+                        error_log('Amelia Slots Manager - Checking slot: ' . $time);
+                        error_log('Amelia Slots Manager - Time difference in minutes: ' . $diff_minutes);
+                        error_log('Amelia Slots Manager - Current participants: ' . ($nearest ? $nearest['current_participants'] : 'No appointment'));
+
                         if ($diff_minutes < $minimum_minutes) {
                             if (!$nearest || $nearest['current_participants'] == 0) {
+                                error_log('Amelia Slots Manager - Removing slot due to minimum minutes rule: ' . $time);
                                 unset($times[$time]);
+                            } else {
+                                error_log('Amelia Slots Manager - Keeping slot due to existing participants: ' . $time);
                             }
                         }
                         $found_first_slot = true;
@@ -603,8 +627,16 @@ class Slots_Manager {
         return $resultData;
     }
 
+    public function render_placeholder_page() {
+        require_once ASM_PLUGIN_DIR . 'views/placeholder-page.php';
+    }
+
     private function get_nearest_appointment($serviceId, $timezone) {
         global $wpdb;
+
+        // Obtener el ID del cliente placeholder configurado
+        $placeholder_id = get_option($this->placeholder_customer_option, $this->default_placeholder_customer);
+        error_log('Amelia Slots Manager - Placeholder ID: ' . $placeholder_id);
 
         // Convertir la hora actual a UTC para la consulta
         $now_local = new DateTime('now', $timezone);
@@ -641,11 +673,14 @@ class Slots_Manager {
             ORDER BY 
                 a.bookingStart ASC
             LIMIT 1",
-            84,  // Tu customerId
+            $placeholder_id,
             'approved',
             $serviceId,
             $today_utc
         );
+
+        error_log('Amelia Slots Manager - Query: ' . $query);
+        error_log('Amelia Slots Manager - Today UTC: ' . $today_utc);
 
         $result = $wpdb->get_row($query, ARRAY_A);
         
@@ -654,14 +689,63 @@ class Slots_Manager {
             return false;
         }
 
+        error_log('Amelia Slots Manager - Query result: ' . print_r($result, true));
+
         if ($result) {
             // Convertir bookingStart de UTC a timezone local
             $booking_time_utc = new DateTime($result['bookingStart'], new DateTimeZone('UTC'));
             $booking_time_local = clone $booking_time_utc;
             $booking_time_local->setTimezone($timezone);
             $result['bookingStart_local'] = $booking_time_local->format('Y-m-d H:i:s');
+            error_log('Amelia Slots Manager - Converted time: ' . $result['bookingStart_local']);
         }
 
         return $result;
+    }
+
+    public function search_amelia_customers() {
+        global $wpdb;
+        
+        $search = isset($_POST['search']) ? sanitize_text_field($_POST['search']) : '';
+        
+        if (empty($search)) {
+            wp_send_json_error('Search term is required');
+        }
+
+        error_log('Amelia Slots Manager - Searching for: ' . $search);
+
+        $query = $wpdb->prepare(
+            "SELECT 
+                id,
+                firstName,
+                lastName,
+                email
+            FROM 
+                {$wpdb->prefix}amelia_users
+            WHERE 
+                type = 'customer'
+                AND (
+                    firstName LIKE %s 
+                    OR lastName LIKE %s 
+                    OR email LIKE %s
+                )
+            LIMIT 10",
+            '%' . $wpdb->esc_like($search) . '%',
+            '%' . $wpdb->esc_like($search) . '%',
+            '%' . $wpdb->esc_like($search) . '%'
+        );
+
+        error_log('Amelia Slots Manager - Query: ' . $query);
+
+        $results = $wpdb->get_results($query, ARRAY_A);
+        
+        if ($wpdb->last_error) {
+            error_log('Amelia Slots Manager - DB Error: ' . $wpdb->last_error);
+            wp_send_json_error('Database error occurred');
+        }
+
+        error_log('Amelia Slots Manager - Results: ' . print_r($results, true));
+        
+        wp_send_json_success($results);
     }
 } 
